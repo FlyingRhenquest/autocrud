@@ -8,12 +8,12 @@ reflection.
 
 ## Limitations
 
-This is designed to use classes that derive from fr::autocrud::node, which provides
+This is designed to use classes that derive from fr::autocrud::Node, which provides
 a unique ID for each record and associations between nodes. There is no inherent reason
 why your tables need to derive from anything, but I've found the node/node_associations
 stuff I provide from the object to be useful.
 
-At the moment, the ID from node is the primary key and autonode doesn't have a way to
+At the moment, the ID from Node is the primary key and autonode doesn't have a way to
 set up other keys or relationships. I plan to add annotations to provide some extra
 control over the database soon.
 
@@ -25,13 +25,13 @@ You can not store an autocrud class in an autocrud data object right now. I mean
 can, but it won't work the way you want it to. I would like to detect them to establish
 relationships between tables, but that'll take some work.
 
-You can set node associations through the node up/down lists and these do get recorded.
+You can set node associations through the Node up/down lists and these do get recorded.
 Storing one node at the moment will not store the other nodes, so you need to use
-node::traverse to store your nodes if you set those relationships up. Doing that is
+Node::traverse to store your nodes if you set those relationships up. Doing that is
 kind of brittle if you need different Crud objects to store your different node types.
 I anticipate this won't be extremely difficult to fix and intend to do so. See
-the test NodeAssociationsBasic in IntegrationTests.cpp for an example of how you might
-do that at the moment.
+the test NodeAssociationsBasic in IntegrationTests.cpp for an example of how traverse
+works.
 
 I don't currently have a method to read all related nodes out of the database. I'm
 planning set up a factory to do that similar to the one in RequirementsManager, as
@@ -56,8 +56,8 @@ The Crud object provides the following operations:
 You can use the following annotations on the fiels in your object to affect your table:
 
  1. [[=fr::autocrud::DbIgnore{}]] Do not put this field into the database.
- 2. [[fr::autocrud::DbFieldName{std::define\_static\_string("...")}]] Rename the field in the database to "..."
- 3. [[fr::autocrud::DbFieldType{std::define\_static\)string("...")}]] Set the database field type
+ 2. [[=fr::autocrud::DbFieldName{std::define\_static\_string("...")}]] Rename the field in the database to "..."
+ 3. [[=fr::autocrud::DbFieldType{std::define\_static\)string("...")}]] Set the database field type
  
 Autocrud does try to extrapolate database field types from c++ types if you don't set the
 manually. See include/fr/CrudTypes.h for details.
