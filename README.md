@@ -59,6 +59,13 @@ You can use the following annotations on the fiels in your object to affect your
  2. [[=fr::autocrud::DbFieldName{std::define\_static\_string("...")}]] Rename the field in the database to "..."
  3. [[=fr::autocrud::DbFieldType{std::define\_static\)string("...")}]] Set the database field type
  
+If you find these to be a bit long to type, you can include <fr/autocrud/Helpers.h> and use
+these instead:
+
+ 1. [[=Ignore()]]
+ 2. [[="RenamedColumn"_ColumnName]]
+ 3. [[="VARCHAR(100)"_ColumnType]]
+ 
 Autocrud does try to extrapolate database field types from c++ types if you don't set the
 manually. See include/fr/CrudTypes.h for details.
 
