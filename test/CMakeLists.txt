@@ -14,6 +14,7 @@ set(TEST_SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/NodeTest.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/NodeCrud.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/AutocrudTests.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/HelpersTest.cpp
 )
 
 add_executable(test
