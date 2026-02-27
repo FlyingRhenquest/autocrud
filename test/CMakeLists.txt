@@ -27,7 +27,7 @@ target_link_libraries(test PUBLIC
   FR::autocrud
 )
 
-if (BUILD_INTEGRATION_TESTS)
+if (AUTOCRUD_BUILD_INTEGRATION_TESTS)
 
   set(INTEGRATION_TEST_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/IntegrationTests.cpp
