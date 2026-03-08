@@ -32,7 +32,7 @@ TEST(Helpers, annotations) {
   {
     const auto [cppName, dbName, dbType, ptr] = crud.column<0>();
     // "ignored" ignored successfully
-    ASSERT_EQ(0, strlen(cppName));
+    ASSERT_EQ(cppName, nullptr);
   }
   {
     const auto [cppName, dbName, dbType, ptr] = crud.column<1>();

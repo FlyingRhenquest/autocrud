@@ -26,8 +26,11 @@
  * table in these tests.
  */
 
+#include <array>
 #include <gtest/gtest.h>
 #include <fr/autocrud/Crud.h>
+#include <fr/autocrud/Graph.h>
+#include <fr/autocrud/Helpers.h>
 #include <memory>
 #include <pqxx/pqxx>
 
@@ -139,4 +142,97 @@ TEST(Integration, DerivedNodeBasicOneNode) {
   table.Delete(node,c);
   table.DropTable(c);
   
+}
+
+/**
+ * Verify Graph works. We'll include a plain node,
+ * a couple of derived nodes and a derived node that we
+ * don't inform our Graph of. The derived node we
+ * don't inform our Graph of should be stored as
+ * a plain old Node.
+ */
+TEST(Integration, Graph) {
+
+  struct UserName : public fr::autocrud::Node {
+    [[="VARCHAR(40)"_ColumnType]] std::string first_name;
+    [[="VARCHAR(40)"_ColumnType]] std::string last_name;
+  };
+
+  struct PhoneNumber : public fr::autocrud::Node {
+    [[="VARCHAR(15)"_ColumnType]] std::string number;
+  };
+
+  struct Address : public fr::autocrud::Node {
+    std::string address;
+  };
+
+  constexpr std::array NodeTypes = {^^UserName, ^^PhoneNumber};
+  fr::autocrud::Graph<NodeTypes> saver;
+  pqxx::connection c;
+
+  saver.CreateTables(c);
+
+  auto graph = std::make_shared<fr::autocrud::Node>();
+  auto name = std::make_shared<UserName>();
+  name->first_name = "Some";
+  name->last_name = "Rando";
+  // Attach name to graph
+  graph->addDown(name);
+  name->addUp(graph);
+
+  auto phone = std::make_shared<PhoneNumber>();
+  phone->number = "5551212";
+  graph->addDown(phone);
+  phone->addUp(graph);
+
+  auto address = std::make_shared<Address>();
+  address->address = "123 Rando Street";
+  graph->addDown(address);
+  address->addUp(graph);
+
+  saver.Save(graph,c);
+
+  // We'll use a regular node Crud object to verify
+  // add Ids in the graph were stored in the database
+
+  fr::autocrud::Crud<fr::autocrud::Node> validator;
+
+  // Note that although this passes, the Address information has in
+  // fact been lost because we (deliberately) did not include Address
+  // in NodeTypes. The address node ID still exsists, but no table
+  // was created for Address.
+  
+  graph->traverse([&](fr::autocrud::Node::PtrType node) {
+    ASSERT_TRUE(validator.Exists(node,c));
+  });
+
+  // Load graph from database
+  auto copy = std::make_shared<fr::autocrud::Node>();
+  copy->setUuid(graph->idString());
+
+  saver.Load(copy, c);
+
+  bool foundPhoneNumber = false;
+  bool foundUserName = false;
+
+  copy->traverse([&](fr::autocrud::Node::PtrType node) {
+    auto copyName = std::dynamic_pointer_cast<UserName>(node);
+    if (copyName) {
+      ASSERT_EQ(copyName->first_name, "Some");
+      ASSERT_EQ(copyName->last_name, "Rando");
+      foundUserName = true;
+    }
+    auto copyPhone = std::dynamic_pointer_cast<PhoneNumber>(node);
+    if (copyPhone) {
+      ASSERT_EQ(copyPhone->number, "5551212");
+      foundPhoneNumber = true;
+    }
+  });
+
+  ASSERT_TRUE(foundPhoneNumber);
+  ASSERT_TRUE(foundUserName);
+
+  // Clean up after test
+  saver.Delete(graph,c);
+  saver.DropTables(c);
 }

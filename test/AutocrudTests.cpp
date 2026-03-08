@@ -74,11 +74,8 @@ TEST(Autocrud, TableDefBasic) {
   }
   {
     const auto [cppName, dbName, dbType, ptr] = crud.column<2>();
-    // All strings in the tuple will be empty for an ignore field
-    // and ptr will be nullptr, so if you're using this test interface
-    // to do something else with your column names, you'd best check
-    // the lengths before using anything in there.
-    ASSERT_EQ(strlen(cppName), 0);
+    // Ignore field names will be nullptr
+    ASSERT_EQ(cppName, nullptr);
   }
   {
     const auto [cppName, dbName, dbType, ptr] = crud.column<3>();

@@ -82,6 +82,8 @@ namespace fr::autocrud {
     using Type = Node;
     static constexpr char tableName[] = "Node";
 
+    Crud() {}
+    
     /**
      * Create the table if it doesn't exist
      */
@@ -289,6 +291,19 @@ namespace fr::autocrud {
       }
     }
 
+    /**
+     * Define what our column tuple looks like.
+     */
+    
+    template <typename MemberPtrType>
+    using ColumnTuple = std::tuple<
+      const char*,
+      const char*,
+      const char*,
+      MemberPtrType>;
+    
+    /**
+    
     // Trying to use "template for" to stamp these out led to a variety of problems, so I'm going to resort to the
     // old-timey "recursively define a tuple" metaprogramming approach.
     
@@ -301,15 +316,16 @@ namespace fr::autocrud {
 
     template <std::meta::info field>
     static constexpr auto MakeColumnTuple() {
-      return std::tuple{
+        using Ptr = decltype(&[: field :]);
         // C++ name of row (0)
-        std::define_static_string(std::meta::identifier_of(field)),
-        FieldName<field>(),
-        // Database type of row (2)
-        FieldType<field>(),
-        // Member pointer for this row (field) (3)
-        &[: field :]
-      };
+        return ColumnTuple<Ptr> {
+          std::define_static_string(std::meta::identifier_of(field)),
+          FieldName<field>(),
+          // Database type of row (2)
+          FieldType<field>(),
+          // Member pointer for this row (field) (3)
+          &[: field :]
+        };
     }
 
     /**
@@ -321,11 +337,12 @@ namespace fr::autocrud {
       constexpr auto fields = std::define_static_array(std::meta::nonstatic_data_members_of(^^T, _ctx));
       
       if constexpr (memberIndex == (fields.size())) {
-        return std::tuple{blob...};
+        return std::tuple<Accumulator...>{blob...};
       } else {
         // build in an ignore tuple
         if constexpr(has_annotation<DbIgnore, fields[memberIndex]>()) {
-          return BuildDef<memberIndex + 1>(blob..., std::tuple{"", "", "", nullptr});
+          using Ptr = decltype(&[: fields[memberIndex] :]);
+          return BuildDef<memberIndex + 1>(blob..., ColumnTuple<Ptr>{{}, {}, {}, nullptr});
         } else {
           return BuildDef<memberIndex + 1>(blob..., MakeColumnTuple<fields[memberIndex]>());
         }
@@ -357,12 +374,12 @@ namespace fr::autocrud {
      * You can convert to structured bindings with
      * auto [cppName, dbName, dbType, ptr] = column<0>();
      *
-     * You DO need to check that strlen(cppName) > 0 prior to
-     * using ptr. If strlen(cppName) == 0, ptr will just be
-     * nullptr.
+     * You DO need to check that cppName != nullptr before using
+     * it, as that will denote an ignored field and those
+     * should be skipped.
      */
     template <size_t index>
-    auto column() {
+    constexpr auto& column() {
       return std::get<index>(_columns);
     }
     
@@ -378,7 +395,7 @@ namespace fr::autocrud {
       template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
         const auto [cppName, dbName, dbType, ptr] = this->column<i>();
         // This is an ignore field
-        if (0 == strlen(cppName)) {
+        if (cppName && 0 == strlen(cppName)) {
           continue;
         };
         cmd.append(std::format(",{} {}", dbName, dbType));
@@ -448,7 +465,7 @@ namespace fr::autocrud {
       template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
         const auto [cppName, dbName, dbType, ptr] = this->column<i>();
         // Skip ignore field
-        if (0 == strlen(cppName)) {
+        if (!cppName || 0 == strlen(cppName)) {
           continue;
         }
         fields.append(std::format(",{}", dbName));
@@ -487,13 +504,13 @@ namespace fr::autocrud {
       for (auto const &row : res) {
         template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
           const auto [cppName, dbName, dbType, ptr] = this->column<i>();
-          if (0 == strlen(cppName)) {
+          if (!cppName || 0 == strlen(cppName)) {
             continue;
           }
           // Retrieve the type so we can set it wtih row[string].as<type>()
           using ColumnType = std::decay_t<decltype((*n).*ptr)>;
           // Nothing up my sleeve
-          (*n).*ptr = row[dbName].template as<ColumnType>();
+          (*n).*ptr = row[std::string(dbName)].template as<ColumnType>();
         }
       }
       return ret;
@@ -513,7 +530,7 @@ namespace fr::autocrud {
       size_t skippedSome = 0;
       template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
         const auto [cppName, dbName, dbType, ptr] = this->column<i>();
-        if (0 == strlen(cppName)) {
+        if (!cppName || 0 == strlen(cppName)) {
           continue;
         }
         if (0 != skippedSome++) {
