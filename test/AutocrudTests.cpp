@@ -46,6 +46,8 @@ TEST(Autocrud, TableDefBasic) {
   };
 
   fr::autocrud::Crud<Child> crud;
+  ASSERT_EQ(std::string(crud.tableName), "Child");
+  
   auto child = std::make_shared<Child>();
   
   child->foo = 42;
@@ -92,4 +94,16 @@ TEST(Autocrud, TableDefBasic) {
     ASSERT_EQ((*child).*ptr, "No, it's Steve.");
   }
   // Yay! We can introspect our class as expected.
+}
+
+TEST(Autocrud, RenameTable) {
+  // Would recommend generally using the helper for this (See HelpersTest.cpp)
+  struct [[=fr::autocrud::DbTableName(std::define_static_string("generic_table"))]]
+    NotAGenericTable : public fr::autocrud::Node {
+    int foo;
+  };
+
+  fr::autocrud::Crud<NotAGenericTable> crud;
+  ASSERT_EQ(std::string(crud.tableName), "generic_table");
+  
 }

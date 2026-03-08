@@ -67,11 +67,24 @@ namespace fr::autocrud {
     char const* fieldName;
   };
 
+  /**
+   * DbTableName is a type you can put in an annotation to a struct to signal
+   * autocrud that you want the table to have a specific name.
+   *
+   * ex: struct [[=DbTableName(std::define_static_string("user_name"))]] UserName
+   */
+
+  struct DbTableName {
+    char const* tableName;
+  };
+
   // Predeclare crud
   template <typename T>
   requires std::derived_from<T, Node>
   struct Crud;
 
+  //------------------------------ Crud (Node Specialization) ------------------------------
+  
   /**
    * Node does require special handling, as I want to write its up and
    * down lists to node_associations. So here's the node-specific specialization
@@ -223,6 +236,8 @@ namespace fr::autocrud {
     }
   };
   
+
+  //----------------------------- Crud (Generic) -----------------------------------------------
   
   /**
    * Crud provides functionality to write a single node to a table. It does record
@@ -237,9 +252,9 @@ namespace fr::autocrud {
   template <typename T>
   requires std::derived_from<T, Node>
   struct Crud {
+    
     using Type = T;
     using PtrType = std::shared_ptr<Type>;
-    static constexpr auto tableName = std::define_static_string(std::meta::identifier_of(^^T));
         
   private:
     // Access context for std::meta (We get both public and private fields)
@@ -247,7 +262,7 @@ namespace fr::autocrud {
     // Max members in storage. If we have a DbIgnore annotation, it could be less than this,
     // but it won't be more.
     constexpr static size_t _maxMembers = std::meta::nonstatic_data_members_of(^^T, _ctx).size();    
-    
+
     /**
      * Returns true if member has an annotation of a specific type
      */
@@ -262,6 +277,17 @@ namespace fr::autocrud {
       return false;
     }
 
+    /**
+     * Checks for a table name annotation and returns the table name
+     */
+
+    static consteval auto TableName() {
+      if constexpr(has_annotation<DbTableName, ^^T>()) {
+        return std::meta::extract<DbTableName>(std::meta::annotations_of_with_type(^^T, ^^DbTableName)[0]).tableName;
+      } 
+      return std::define_static_string(std::meta::identifier_of(^^T));
+    }
+    
     /**
      * Check to see if a field name is overridden with an annotation and return the correct field name.
      */
@@ -361,7 +387,8 @@ namespace fr::autocrud {
     static constexpr auto _columns = BuildDefs();
       
   public:
-
+    // Will be a DbTableName annotation if one exists OR the identifier of Struct T
+    static constexpr auto tableName = TableName();
     static constexpr auto columnsSize = std::tuple_size<decltype(_columns)>{};
     static constexpr auto lastColumn = std::tuple_size<decltype(_columns)>{} - 1;
     

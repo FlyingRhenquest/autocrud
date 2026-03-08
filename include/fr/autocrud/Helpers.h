@@ -63,3 +63,8 @@ template <fr::autocrud::FixedString T>
 constexpr fr::autocrud::DbFieldName operator""_ColumnName() {
   return fr::autocrud::DbFieldName(std::define_static_string(T.data));
 }
+
+template <fr::autocrud::FixedString T>
+constexpr fr::autocrud::DbTableName operator""_TableName() {
+  return fr::autocrud::DbTableName(std::define_static_string(T.data));
+}

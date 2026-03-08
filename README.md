@@ -116,5 +116,7 @@ not much more work.
 
 # TODOs
 
- 1. Implement an annotation to allow naming tables. Currently you just get the structure name from reflection.
+I should probably put in some annotations to establish additional indexes/keys
+on a table for referential integrity and fast lookups of columns other than
+id. This is pretty good now as a proof of concept, though.
 

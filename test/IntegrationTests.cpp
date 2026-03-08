@@ -272,5 +272,9 @@ TEST(Integration, Recursive) {
   ASSERT_EQ(copy->idString(), copyUp->idString());
   auto copyDown = copy->findDown(copy->idString());
   ASSERT_TRUE(copyDown);
-  ASSERT_EQ(copy->idString(), copyDown->idString());  
+  ASSERT_EQ(copy->idString(), copyDown->idString());
+
+  // Clean up after test
+  saver.Delete(recursive, c);
+  saver.DropTables(c);
 }

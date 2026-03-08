@@ -21,7 +21,7 @@
 
 TEST(Helpers, annotations) {
 
-  struct Derived : public fr::autocrud::Node {
+  struct [[="derived_table"_TableName]] Derived : public fr::autocrud::Node {
     [[=Ignore() ]] int ignored;
     [[="VARCHAR(100)"_ColumnType]] std::string foo;
     [[="quux"_ColumnName]] std::string bar; // will be named quux
@@ -29,6 +29,8 @@ TEST(Helpers, annotations) {
 
   fr::autocrud::Crud<Derived> crud;
 
+  ASSERT_EQ(std::string(crud.tableName), "derived_table");
+  
   {
     const auto [cppName, dbName, dbType, ptr] = crud.column<0>();
     // "ignored" ignored successfully
