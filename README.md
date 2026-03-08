@@ -113,3 +113,8 @@ at the moment so it seemed like a good time to upload it to github.
  
 This is more-or-less a toy right now, but I expect it to be a lot more useful with
 not much more work.
+
+# TODOs
+
+ 1. Implement an annotation to allow naming tables. Currently you just get the structure name from reflection.
+ 2. Make sure Graph::Load works for complex graphs where up/down nodes in multiple places in the graph have the same node ID.
