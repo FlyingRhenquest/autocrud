@@ -117,4 +117,4 @@ not much more work.
 # TODOs
 
  1. Implement an annotation to allow naming tables. Currently you just get the structure name from reflection.
- 2. Make sure Graph::Load works for complex graphs where up/down nodes in multiple places in the graph have the same node ID.
+

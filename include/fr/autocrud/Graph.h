@@ -124,7 +124,9 @@ namespace fr::autocrud {
       // Create and load nodes for each one
       for (auto up : ups) {
         if (alreadyLoaded.contains(up)) {
-          // Do not load already loaded nodes
+          // Add it to the graph here
+          graph->addUp(alreadyLoaded[up]);
+          // Don't load it again
           continue;
         }
         std::string nodeType = findNodeType(up, c);
@@ -138,6 +140,9 @@ namespace fr::autocrud {
       readAssociations(graph->idString(), downs, "down", c);
       for (auto down : downs) {
         if (alreadyLoaded.contains(down)) {
+          // Add it to the graph here
+          graph->addDown(alreadyLoaded[down]);
+          // Don't load it again.
           continue;
         }
         std::string nodeType = findNodeType(down, c);

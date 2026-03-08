@@ -236,3 +236,41 @@ TEST(Integration, Graph) {
   saver.Delete(graph,c);
   saver.DropTables(c);
 }
+
+// Verify a recursive graph does not load infinitely
+TEST(Integration, Recursive) {
+
+  struct Recursive : public fr::autocrud::Node {
+    [[="VARCHAR(12)"_ColumnType]] std::string label;
+  };
+
+  auto recursive = std::make_shared<Recursive>();
+  recursive->label = "Recursive!";
+
+  // This is fine...
+  recursive->addUp(recursive);
+  recursive->addDown(recursive);
+
+  pqxx::connection c;
+  // I could do this with a raw crud but we're testing graph here
+  constexpr std::array NodeTypes = { ^^Recursive };
+  fr::autocrud::Graph<NodeTypes> saver;
+  saver.CreateTables(c);
+  saver.Save(recursive, c);
+
+  // We will use a Crud for validation though
+  fr::autocrud::Crud<Recursive> validator;
+  ASSERT_TRUE(validator.Exists(recursive, c));
+
+  auto copy = std::make_shared<Recursive>();
+  copy->setUuid(recursive->idString());
+  saver.Load(copy, c);
+
+  ASSERT_EQ(copy->label, recursive->label);
+  auto copyUp = copy->findUp(copy->idString());
+  ASSERT_TRUE(copyUp);
+  ASSERT_EQ(copy->idString(), copyUp->idString());
+  auto copyDown = copy->findDown(copy->idString());
+  ASSERT_TRUE(copyDown);
+  ASSERT_EQ(copy->idString(), copyDown->idString());  
+}
