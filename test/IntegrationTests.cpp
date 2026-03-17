@@ -269,12 +269,69 @@ TEST(Integration, Recursive) {
   ASSERT_EQ(copy->label, recursive->label);
   auto copyUp = copy->findUp(copy->idString());
   ASSERT_TRUE(copyUp);
-  ASSERT_EQ(copy->idString(), copyUp->idString());
+  ASSERT_EQ(copy->idString(), copyUp->first->idString());
   auto copyDown = copy->findDown(copy->idString());
   ASSERT_TRUE(copyDown);
-  ASSERT_EQ(copy->idString(), copyDown->idString());
+  ASSERT_EQ(copy->idString(), copyDown->first->idString());
 
   // Clean up after test
   saver.Delete(recursive, c);
+  saver.DropTables(c);
+}
+
+// Test the new Relations functionality in addup/adddown
+TEST(Integration, Relations) {
+
+  // For like, a build system or something
+  struct Target : public fr::autocrud::Node {
+    [[="VARCHAR(40)"_ColumnType]] std::string name;
+  };
+
+  auto primary = std::make_shared<Target>();
+  primary->name = "MrsBling";
+
+  auto dep1 = std::make_shared<Target>();
+  dep1->name = "autocrud"; // autocrud library of course
+
+  auto dep2 = std::make_shared<Target>();
+  dep2->name = "autoceral";
+
+  using Relationship = fr::autocrud::Relationship;
+  primary->addDown(dep1, Relationship::Requires);
+  dep1->addUp(primary, Relationship::Provides);
+  primary->addDown(dep2, Relationship::Requires);
+  dep2->addUp(primary, Relationship::Provides);
+
+  constexpr std::array NodeTypes { ^^Target };
+  fr::autocrud::Graph<NodeTypes> saver;
+  pqxx::connection c;
+  saver.CreateTables(c);
+  saver.Save(primary, c);
+
+  auto copy = std::make_shared<Target>();
+  copy->setUuid(primary->idString());
+  saver.Load(copy, c);
+  ASSERT_EQ(primary->name, copy->name);
+  ASSERT_EQ(copy->down.size(), primary->down.size());
+  ASSERT_EQ(primary->down[0].second, Relationship::Requires);
+
+  auto tempDep1 = copy->findDownPtr(dep1->idString());
+  auto tempDep2 = copy->findDownPtr(dep2->idString());
+  ASSERT_TRUE(tempDep1);
+  ASSERT_TRUE(tempDep2);
+  // If you had a lot of stuff in node types, you could iterate over
+  // the NodeTypes array with std::views::iota or indicies and try to
+  // cast these until you get one that's not nullptr.
+  auto copyDep1 = dynamic_pointer_cast<Target>(tempDep1);
+  auto copyDep2 = dynamic_pointer_cast<Target>(tempDep2);
+  
+  ASSERT_EQ(copy->down[0].second, primary->down[0].second); // Relationship
+  ASSERT_EQ(copyDep1->idString(), dep1->idString());
+  ASSERT_EQ(copyDep1->name, dep1->name);
+  ASSERT_EQ(copy->down[1].second, primary->down[1].second);
+  ASSERT_EQ(copyDep2->idString(), dep2->idString());
+  ASSERT_EQ(copyDep2->name, dep2->name);
+
+  saver.Delete(primary, c);
   saver.DropTables(c);
 }

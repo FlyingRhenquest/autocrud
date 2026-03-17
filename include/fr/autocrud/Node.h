@@ -18,15 +18,18 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <fr/autocrud/RelationTypes.h>
 #include <functional>
 #include <iostream>
 #include <list>
 #include <memory>
 #include <meta>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace fr::autocrud {
 
@@ -40,6 +43,11 @@ namespace fr::autocrud {
   public:
     using Type = Node;
     using PtrType = std::shared_ptr<Type>;
+    // Type to store in up/down vectors. This will be a std::pair of
+    // PtrType and Relationship, which is an enum defined in
+    // RelationshipTypes.h. This will allow you to tag up/down relationships
+    // with hopefully useful metadata about the relationship
+    using NodeRelation = std::pair<PtrType, Relationship>;
     
   protected:
 
@@ -63,19 +71,19 @@ namespace fr::autocrud {
 
       // Handle up nodes
       for (auto upNode : up) {
-        if (! visited.contains(upNode->idString())) {
-          upNode->traverse(eachNodeFn, visited);
+        if (! visited.contains(upNode.first->idString())) {
+          upNode.first->traverse(eachNodeFn, visited);
         }
       }
 
       // Handle down nodes
       for (auto downNode : down) {
-        if (! visited.contains(downNode->idString())) {
-          downNode->traverse(eachNodeFn, visited);
+        if (! visited.contains(downNode.first->idString())) {
+          downNode.first->traverse(eachNodeFn, visited);
         }
       }
     }
-    
+
   public:
 
     // Lock nodeMutex before changing values, serializing/deserializing
@@ -83,9 +91,9 @@ namespace fr::autocrud {
     // mutex as soon as possible after locking it.
     mutable std::mutex nodeMutex;
     // Use up for things like parent(s), required-by, owner(s), etc
-    std::vector<PtrType> up;
+    std::vector<NodeRelation> up;
     // Use down for things like children, requires, owned things, etc
-    std::vector<PtrType> down;
+    std::vector<NodeRelation> down;
     // All nodes may have an assigned UUID. This UUID is declared
     // in this class but is not populated upon creation of the object,
     // as I don't necessarily want to pay the overhead for one every
@@ -125,53 +133,89 @@ namespace fr::autocrud {
       id = generator();
     }
 
-    // Find a node ID in a vector
-    PtrType findIn(const std::string& id, std::vector<PtrType> &list) {
-      PtrType ret;
+    // Find a node ID in a vector. Returns a copy because
+    // you can remove an item from the list at any time.
+    std::optional<NodeRelation> findIn(const std::string& id, std::vector<NodeRelation> &list) {
       for (auto item : list) {
-        if (id == item->idString()) {
-          ret = item;
-          break;
+        if (id == item.first->idString()) {
+          return std::optional<NodeRelation>(item);
         }
       }
-      return ret;
+      return std::nullopt;
     }
 
     // Find a node ID in our uplist
-    PtrType findUp(const std::string& id) {
+    std::optional<NodeRelation> findUp(const std::string& id) {
       return findIn(id, up);
     }
 
     // Find a nide in our downlist
-    PtrType findDown(const std::string& id) {
+    std::optional<NodeRelation> findDown(const std::string& id) {
       return findIn(id, down);
     }
 
+    // findUp but I just want the pointer and not the relation
+    PtrType findUpPtr(const std::string& id) {
+      PtrType ret;
+      auto maybeNode = findUp(id);
+      if (maybeNode.has_value()) {
+        ret = maybeNode->first;
+      }
+      return ret;
+    }
+
+    PtrType findDownPtr(const std::string& id) {
+      PtrType ret;
+      auto maybeNode = findDown(id);
+      if (maybeNode.has_value()) {
+        ret = maybeNode->first;
+      }
+      return ret;
+    }
+
+    // findUp but I just want the Relation and not the pointer
+    Relationship findUpRelationship(const std::string& id) {
+      Relationship ret = Relationship::Unknown;
+      auto maybeNode = findUp(id);
+      if (maybeNode.has_value()) {
+        ret = maybeNode->second;
+      }
+      return ret;
+    }
+
+    // findDown but I just wantt he relation and not the pointer
+    Relationship findDownRelationship(const std::string& id) {
+      Relationship ret = Relationship::Unknown;
+      auto maybeNode = findDown(id);
+      if (maybeNode.has_value()) {
+        ret = maybeNode->second;
+      }
+      return ret;
+    } 
+
     // Add a node to a vector
-    void addNode(PtrType node, std::vector<PtrType> &list) {
+    void addNode(PtrType node, std::vector<NodeRelation> &list, Relationship tag = Relationship::GraphConnection) {
       if (!findIn(node->idString(), list)) {
-        list.push_back(node);
+        list.push_back(std::make_pair(node, tag));
       }
     }
 
     // Add a node to our uplist
-    PtrType addUp(PtrType node) {
-      addNode(node, up);
-      return node;
+    void addUp(PtrType node, Relationship tag = Relationship::GraphConnection) {
+      addNode(node, up, tag);
     }
 
     // Add a node to our downlist
-    PtrType addDown(PtrType node) {
-      addNode(node, down);
-      return node;
+    void addDown(PtrType node, Relationship tag = Relationship::GraphConnection) {
+      addNode(node, down, tag);
     }
 
     // Remove a node from a vector
-    void removeFromList(PtrType node, std::vector<PtrType>& vec) {
+    void removeFromList(PtrType node, std::vector<NodeRelation>& vec) {
       vec.erase(std::remove_if(vec.begin(),
                                vec.end(),
-                               [&node](PtrType n){
-                                 return n->idString() == node->idString();
+                               [&node](NodeRelation n){
+                                 return n.first->idString() == node->idString();
                                }),
                 vec.end());
     }

@@ -18,6 +18,7 @@
 
 #include <concepts>
 #include <fr/autocrud/CrudTypes.h>
+#include <fr/autocrud/RelationTypes.h>
 #include <fr/autocrud/Node.h>
 #include <pqxx/pqxx>
 #include <format>
@@ -107,10 +108,13 @@ namespace fr::autocrud {
       std::string CNTable = std::format("CREATE TABLE IF NOT EXISTS {} (", tableName);
       CNTable.append("id         UUID PRIMARY KEY,");
       CNTable.append("node_type  VARCHAR(100) NOT NULL);");
-      // create assocations table
+      // Define line for relationship
+      std::string relationshipLine = std::format("relationship    VARCHAR({}) NOT NULL,", MAX_ENUM_STRING_LENGTH);
+      // create assocations table      
       std::string CATable("CREATE TABLE IF NOT EXISTS node_associations (");
       CATable.append("id          UUID NOT NULL,");
       CATable.append("association UUID NOT NULL,");
+      CATable.append(relationshipLine);
       CATable.append("type        VARCHAR(5) NOT NULL);"); // "Will be "up" or "down"
       work.exec(CNTable);
       work.exec(CATable);
@@ -207,20 +211,32 @@ namespace fr::autocrud {
       };
       work.exec(rmAssociations, p);
       pqxx::stream_to stream = pqxx::stream_to::table(work, {"public", "node_associations"},
-                                                       {"id", "association", "type"});
+                                                      {"id", "association", "relationship", "type"});
       for (auto up : n->up) {
-        stream.write_values(n->idString(), up->idString(), "up");
+        // The version of pqxx I'm using doesn't support string_view, so I have to convert to
+        // string
+        std::string relationship = std::string(EnumToString<Relationship>(up.second));
+        stream.write_values(n->idString(), up.first->idString(), relationship, "up");
       }
       for (auto down : n->down) {
-        stream.write_values(n->idString(), down->idString(), "down");
+        std::string relationship = std::string(EnumToString<Relationship>(down.second));
+        stream.write_values(n->idString(), down.first->idString(), relationship, "down");
       }
       stream.complete();
       work.commit();
     }
 
     /**
-     * Removes a node and its associated associations
+     * Removes a node and its associated associations. This could screw up your graph
+     * if you're not careful, so make sure to adjust surrounding node associatons
+     * prior to doing this unless you're deleting an entire graph. This does not delete
+     * the node out of memory, but you could unlink all of its node associations manually
+     * to be sure it won't be rewritten if you save the graph later. I don't provide
+     * functions to do this. Feel free to file a feature request if you need some. They
+     * maybe should go in Graph rather than Node, depending on the specific functionality
+     * requested.
      */
+    
     void Delete(Node::PtrType n, pqxx::connection& c) {
       pqxx::work work(c);
       // Here we do want to delete both id and associations to point to this node,
@@ -570,6 +586,9 @@ namespace fr::autocrud {
       pqxx::work work(c);
       work.exec(cmd, p);
       work.commit();
+      // This is fine. If I explicitly create a Crud of the specialized Node type
+      // and pass it our pointer for an update, it'll do the node work and
+      // update associations correctly.
       Crud<Node> node;
       node.Update(n, c);
     }
@@ -586,7 +605,7 @@ namespace fr::autocrud {
       pqxx::work work(c);
       work.exec(cmd, p);
       work.commit();
-      // And delete anything about it out of the node table too
+      // And delete anything about it out of the node and node_associations table too
       Crud<Node> node;
       node.Delete(n, c);
     }

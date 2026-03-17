@@ -17,6 +17,7 @@
 #pragma once
 
 #include <format>
+#include <fr/autocrud/RelationTypes.h>
 #include <fr/autocrud/Crud.h>
 #include <stdexcept>
 #include <span>
@@ -45,6 +46,11 @@ namespace fr::autocrud {
   template<std::array NodeTypes>
   class Graph {    
 
+    // Pair for ReadAssociations -- consists of a string "up" or "down" and a
+    // Relationship enum value.
+    
+    using AssociationPair = std::pair<std::string, Relationship>;
+    
     std::string findNodeType(std::string nodeId, pqxx::connection &c) {
       std::string ret;
       std::string cmd = "select node_type from node where id = $1;";
@@ -59,14 +65,14 @@ namespace fr::autocrud {
         }
       }
       return ret;
-    }
+    }    
 
     // Read associations for "up" or "down" for a given ID
     void readAssociations(std::string id,
-                          std::vector<std::string>& ids,
+                          std::vector<AssociationPair>& ids,
                           std::string upDown,
                           pqxx::connection &c) {
-      std::string cmd = "select association from node_associations where id = $1 and type = $2;";
+      std::string cmd = "select association, relationship from node_associations where id = $1 and type = $2;";
       pqxx::params p{
         id,
         upDown
@@ -75,7 +81,15 @@ namespace fr::autocrud {
       pqxx::result res = work.exec(cmd, p);
       if (res.size() > 0) {
         for (auto const &row : res) {
-          ids.push_back(row["association"].as<std::string>());
+          std::string association = row["association"].as<std::string>();
+          std::string relationship = row["relationship"].as<std::string>();
+          // This will always return a value for a relationship. If it's "Unknown",
+          // there might be some sort of error condition going on. It'd likely be
+          // a Relationship enum version mismatch.
+          auto maybeRelationship = StringToEnum<Relationship>(relationship);
+          // But I'm going to explicitly value_or it here too because I'm paranoid
+          // about such things.
+          ids.push_back(std::make_pair(association, maybeRelationship.value_or(Relationship::Unknown)));
         }
       }
       return;
@@ -119,36 +133,48 @@ namespace fr::autocrud {
         alreadyLoaded[graph->idString()] = graph;
       }
       // Handle "up" associations
-      std::vector<std::string> ups;
+      std::vector<AssociationPair> ups;
       readAssociations(graph->idString(), ups, "up", c);
+
+      // TODO: Would it be worth turning AssociationPair into a tuple, storing
+      // "Up" and "Down" in the tuple with the association Id and relationship,
+      // doing both these queries, joining the vector of tuples into one big
+      // vector and only writing it once? I kind of like the current simplicity,
+      // but this could lead to errors if I'm not careful. Definitely do this
+      // if I decide I need to repeat this loop one more time.
+      
       // Create and load nodes for each one
       for (auto up : ups) {
-        if (alreadyLoaded.contains(up)) {
+        if (alreadyLoaded.contains(up.first)) {
           // Add it to the graph here
-          graph->addUp(alreadyLoaded[up]);
+          graph->addUp(alreadyLoaded[up.first]);
           // Don't load it again
           continue;
         }
-        std::string nodeType = findNodeType(up, c);
+        // Find the node type based on the string portion of AssociationPair
+        std::string nodeType = findNodeType(up.first, c);
         Node::PtrType node = allocateNodeType(nodeType);
-        node->setUuid(up);
-        graph->addUp(node);
+        node->setUuid(up.first);
+        // Add the node to the up list with the Relationship portion of AssociationPair
+        graph->addUp(node, up.second);
         Load(node, c, alreadyLoaded);
       }
       // Same for downs
-      std::vector<std::string> downs;
+      std::vector<AssociationPair> downs;
       readAssociations(graph->idString(), downs, "down", c);
       for (auto down : downs) {
-        if (alreadyLoaded.contains(down)) {
+        if (alreadyLoaded.contains(down.first)) {
           // Add it to the graph here
-          graph->addDown(alreadyLoaded[down]);
+          graph->addDown(alreadyLoaded[down.first]);
           // Don't load it again.
           continue;
         }
-        std::string nodeType = findNodeType(down, c);
+        // Find the node type based on the string portion of AssociationPair (again)
+        std::string nodeType = findNodeType(down.first, c);
         Node::PtrType node = allocateNodeType(nodeType);
-        node->setUuid(down);
-        graph->addDown(node);
+        node->setUuid(down.first);
+        // Add the node to the down list with the Relationship portion of the AssociationPair
+        graph->addDown(node, down.second);
         Load(node, c, alreadyLoaded);
       }
     }

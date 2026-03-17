@@ -26,3 +26,25 @@ TEST(NodeTests, NodeBasic) {
   ASSERT_FALSE(knew.id.is_nil());
 }
 
+TEST(NodeTests, AddUpDownGenericRelations) {
+
+  auto one = std::make_shared<fr::autocrud::Node>();
+  // These should auto-init now
+  ASSERT_FALSE(one->id.is_nil());
+  auto two = std::make_shared<fr::autocrud::Node>();
+  auto three = std::make_shared<fr::autocrud::Node>();
+  one->addDown(two);
+  two->addUp(one);
+
+  two->addDown(three);
+  three->addUp(two);
+
+  auto oneRef = two->findUp(one->idString());
+  ASSERT_TRUE(oneRef.has_value() && oneRef->first != nullptr);
+  ASSERT_EQ(oneRef->first->idString(), one->idString());
+
+  auto threeRef = two->findDown(three->idString());
+  ASSERT_TRUE(threeRef.has_value() && threeRef->first != nullptr);
+  ASSERT_EQ(threeRef->first->idString(), three->idString());
+  
+}
