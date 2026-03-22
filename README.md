@@ -26,22 +26,18 @@ can, but it won't work the way you want it to. I would like to detect them to es
 relationships between tables, but that'll take some work.
 
 You can set node associations through the `Node` up/down lists and these do get recorded.
-Storing one node at the moment will not store the other nodes, so you need to use
-`Node::traverse` to store your nodes if you set those relationships up. Doing that is
-kind of brittle if you need different Crud objects to store your different node types.
-I anticipate this won't be extremely difficult to fix and intend to do so. See
-the test `NodeAssociationsBasic` in `IntegrationTests.cpp` for an example of how traverse
-works.
-
-I don't currently have a method to read all related nodes out of the database. I'm
-planning set up a factory to do that similar to the one in `RequirementsManager`, as
-reading and writing graphs easily is a key element of this project.
+I've also added a `Graph` object that can traverse a graph of `Nodes` to write the whole
+thing to a database and load a graph back from the database. `Graph` is also capable of
+creating tables for all the `Node` child types listed in an array of `std::meta::info`
+objects (Basically like a C++26 type list) and can also drop tables and delete entire
+graphs from the database. I use that for cleaning up after integration tests.
 
 ## Usage
 
 In addition to the following list, you can see the `DerivedNodeBasicOneNode` test in
 `IntegrationTests.cpp`. That derives a very simple class from `Node`, redefines a field
-name with an annotation and does some database things with a test node.
+name with an annotation and does some database things with a test node. The integration
+tests are a good place to look for basic usage.
 
 The `Crud` object provides the following operations:
 
@@ -58,6 +54,7 @@ You can use the following annotations on the fiels in your object to affect your
 1. `[[=DbIgnore{}]]` Do not put this field into the database.
 1. `[[=DbFieldName{std::define_static_string("...")}]]` Rename the field in the database to `"..."`
 1. `[[=DbFieldType{std::define_static_string("...")}]]` Set the database field type
+1. `[[=DBTableName{std::define_static_string("...")}]]` Rename the table associated with the struct
  
 If you find these to be a bit long to type, you can include `<fr/autocrud/Helpers.h>` and use
 these instead:
@@ -65,6 +62,7 @@ these instead:
 1. `[[=Ignore()]]`
 1. `[[="RenamedColumn"_ColumnName]]`
 1. `[[="VARCHAR(100)"_ColumnType]]`
+1. `[[="table_name"_TableName]]`
  
 Autocrud does try to extrapolate database field types from c++ types if you don't set the
 manually. See `<fr/autocrud/CrudTypes.h>` for details.
@@ -79,9 +77,11 @@ Basic steps:
 1. Create a `psqxx::connection` to pass to the various CRUD operations.
 1. Call `Create`/`Read`/`Update`/`Delete` to CRUD things.
  
-`Crud` will create a table named after your structure. I don't have an annotation to change this
-at the moment. So the table for "`struct Derived`" will be "`Derived`". Your table fieldnames will
-be the names of the elements in your structure, unless you rename them with `DbFieldName`.
+`Crud` will create a table named after your structure. I recently
+added an annotation you can use to change this, too. By default, the
+table for "`struct Derived`" will be "`Derived`". Your table
+fieldnames will be the names of the elements in your structure, unless
+you rename them with `DbFieldName`.
 
 # Warnings/Other
 
