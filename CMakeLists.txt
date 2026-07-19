@@ -8,11 +8,20 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(AUTOCRUD_BUILD_MODULES "Build autocrud as a C++ module" OFF)
 option(AUTOCRUD_BUILD_TESTS "Build autocrud tests" ON)
 
 # These are potentially dangerous to your database -- don't enable them unless you really need to
 option(AUTOCRUD_BUILD_INTEGRATION_TESTS "Build integration tests (WILL WRITE TO YOUR DATABASE)" OFF)
+
+# Build the Vector Embeddings tests. This requires you to have a gguf file in resources/tiny.gguf.
+# You can download one from huggingface suitable for unit testing with hf:
+# mkdir resources
+# pip install -U hf
+# hf download tensorblock/optimum-internal-testing_tiny-random-qwen3-GGUF --local-dir ./resources
+#
+# This model is random and just used for unit testing. We'll need a different one for
+# actual applications.
+OPTION(AUTOCRUD_BUILD_VECTOR_EMBEDDING_TESTS ON)
 
 # Warn about integraiton tests
 if (AUTOCRUD_BUILD_INTEGRATION_TESTS)
@@ -23,34 +32,24 @@ endif()
 find_package(PkgConfig)
 find_package(Boost 1.90 REQUIRED)
 find_package(libpqxx CONFIG REQUIRED)
+find_package(llama CONFIG REQUIRED)
 
 set(LIBRARY_LIST)
 
 list(APPEND LIBRARY_LIST Boost::boost)
 list(APPEND LIBRARY_LIST libpqxx::pqxx)
 
-if (AUTOCRUD_BUILD_MODULES)
-  add_library(autocrud)
-  add_library(FR::autocrud ALIAS autocrud)
-  
-  target_sources(autocrud
-    PUBLIC
-      FILE_SET CXX_MODULES FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/fr/autocrud/fr.autocrud.cppm
-  )
-else()
-  add_library(autocrud INTERFACE)
-  add_library(FR::autocrud ALIAS autocrud)
-endif()
+add_library(autocrud INTERFACE)
+add_library(FR::autocrud ALIAS autocrud)
 
-target_include_directories(autocrud PUBLIC
+target_include_directories(autocrud INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(autocrud PUBLIC cxx_std_26)
+target_compile_features(autocrud INTERFACE cxx_std_26)
 
-target_link_libraries(autocrud PUBLIC
+target_link_libraries(autocrud INTERFACE
   ${LIBRARY_LIST}
 )
 

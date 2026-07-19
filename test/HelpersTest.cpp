@@ -32,18 +32,18 @@ TEST(Helpers, annotations) {
   ASSERT_EQ(std::string(crud.tableName), "derived_table");
   
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<0>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<0>();
     // "ignored" ignored successfully
     ASSERT_EQ(cppName, nullptr);
   }
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<1>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<1>();
     ASSERT_EQ("foo", std::string(cppName));
     ASSERT_EQ("foo", std::string(dbName));
     ASSERT_EQ("VARCHAR(100)", std::string(dbType));
   }
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<2>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<2>();
     ASSERT_EQ("bar", std::string(cppName));
     ASSERT_EQ("quux", std::string(dbName));
     ASSERT_EQ("TEXT", std::string(dbType));

@@ -18,18 +18,14 @@
 
 #include <concepts>
 #include <fr/autocrud/CrudTypes.h>
+#include <fr/autocrud/Index.h>
 #include <fr/autocrud/RelationTypes.h>
 #include <fr/autocrud/Node.h>
+#include <fr/autocrud/VectorType.h>
 #include <pqxx/pqxx>
 #include <format>
-#include <stdexcept>
 #include <string>
-#include <string_view>
-#include <tuple>
-#include <type_traits>
-#include <memory>
 #include <meta>
-#include <map>
 #include <ranges>
 
 namespace fr::autocrud {
@@ -115,10 +111,26 @@ namespace fr::autocrud {
       CATable.append("id          UUID NOT NULL,");
       CATable.append("association UUID NOT NULL,");
       CATable.append(relationshipLine);
-      CATable.append("type        VARCHAR(5) NOT NULL);"); // "Will be "up" or "down"
+      CATable.append("type        VARCHAR(5) NOT NULL,"); // "Will be "up" or "down"
+      CATable.append("PRIMARY KEY (id, association, type));");
       work.exec(CNTable);
       work.exec(CATable);
       work.commit();
+      CreateIndexes(c);
+    }
+
+    /**
+     * Create indexes if they don't exist
+     */
+
+    void CreateIndexes(pqxx::connection &c) {
+      pqxx::work work(c);
+
+      // Create a reverse index so we can traverse from association to ID
+      // quickly as well.
+      std::string CAIndex{"CREATE INDEX IF NOT EXISTS associations_reverse_index ON node_associations(association, id);"};
+      work.exec(CAIndex);
+      work.commit();      
     }
 
     /**
@@ -334,14 +346,39 @@ namespace fr::autocrud {
     }
 
     /**
+     * Return the number of indexes on a field
+     */
+
+    template <std::meta::info field>
+    static constexpr size_t IndexCount() {
+      return std::meta::annotations_of_with_type(field, ^^Index).size();
+    }
+    
+    /**
+     * Return IndexArray of indexes
+     */
+    template <std::meta::info field>
+    static constexpr auto MakeIndexArray() {
+      IndexArray<IndexCount<field>()> result{};
+
+      constexpr auto indexes = std::define_static_array(std::meta::annotations_of_with_type(field, ^^Index));
+
+      template for (constexpr auto i : std::views::iota(((size_t) 0l), IndexCount<field>() )) {
+        result.index[i] = std::meta::extract<Index>(indexes[i]);
+      }
+      return result;
+    }    
+    
+    /**
      * Define what our column tuple looks like.
      */
     
-    template <typename MemberPtrType>
+    template <typename MemberPtrType, typename IndexArrayType>
     using ColumnTuple = std::tuple<
       const char*,
       const char*,
       const char*,
+      IndexArrayType,
       MemberPtrType>;
     
     /**
@@ -359,12 +396,15 @@ namespace fr::autocrud {
     template <std::meta::info field>
     static constexpr auto MakeColumnTuple() {
         using Ptr = decltype(&[: field :]);
+        constexpr static size_t indexCount = IndexCount<field>();
+        using IndexArrayType = IndexArray<indexCount>;
         // C++ name of row (0)
-        return ColumnTuple<Ptr> {
+        return ColumnTuple<Ptr, IndexArrayType> {
           std::define_static_string(std::meta::identifier_of(field)),
           FieldName<field>(),
           // Database type of row (2)
           FieldType<field>(),
+          MakeIndexArray<field>(),
           // Member pointer for this row (field) (3)
           &[: field :]
         };
@@ -372,7 +412,7 @@ namespace fr::autocrud {
 
     /**
      * Fold shenanigans to build my tuple structure so it'll decompose correctly across the
-     * entire structured.
+     * entire structure.
      */
     template <size_t memberIndex, typename... Accumulator>
     static constexpr auto BuildDef(Accumulator... blob) {
@@ -384,7 +424,7 @@ namespace fr::autocrud {
         // build in an ignore tuple
         if constexpr(has_annotation<DbIgnore, fields[memberIndex]>()) {
           using Ptr = decltype(&[: fields[memberIndex] :]);
-          return BuildDef<memberIndex + 1>(blob..., ColumnTuple<Ptr>{{}, {}, {}, nullptr});
+          return BuildDef<memberIndex + 1>(blob..., ColumnTuple<Ptr, IndexArray<0>>{{}, {}, {}, {}, nullptr});
         } else {
           return BuildDef<memberIndex + 1>(blob..., MakeColumnTuple<fields[memberIndex]>());
         }
@@ -415,7 +455,7 @@ namespace fr::autocrud {
      * Return column tuple by index
      *
      * You can convert to structured bindings with
-     * auto [cppName, dbName, dbType, ptr] = column<0>();
+     * auto [cppName, dbName, dbType, indexes, ptr] = column<0>();
      *
      * You DO need to check that cppName != nullptr before using
      * it, as that will denote an ignored field and those
@@ -436,7 +476,7 @@ namespace fr::autocrud {
       cmd.append("id UUID PRIMARY KEY");
       // Bring in table defs from our columns tuple
       template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
-        const auto [cppName, dbName, dbType, ptr] = this->column<i>();
+        const auto [cppName, dbName, dbType, index, ptr] = this->column<i>();
         // This is an ignore field
         if (cppName && 0 == strlen(cppName)) {
           continue;
@@ -453,6 +493,49 @@ namespace fr::autocrud {
       // a table every day.
       Crud<Node> node;
       node.CreateTable(c);
+      CreateIndexes(c);
+    }
+
+    /**
+     * Create an indexes you set up -- This will be called
+     * when you call CreateTable. It will only create
+     * indexes if they don't already exist, so it's safe
+     * to call again (or later, if you drop your indexes
+     * and need to re-create them.)
+     */
+
+    void CreateIndexes(pqxx::connection &c) {
+      // Iterate through all of our columns looking for Index annotations
+      template for(constexpr size_t i : std::views::iota(0, columnsSize)) {
+        pqxx::work work(c);
+        const auto [cppName, dbName, dbType, indexes, ptr] = this->column<i>();
+        if (!indexes.index.empty()) {
+          for(const auto& index : indexes.index) {
+            std::string createCmd{"CREATE INDEX IF NOT EXISTS "};
+            createCmd.append(index.Name);
+            createCmd.append(" ON ");
+            if (index.On) {
+              createCmd.append(index.On);
+            } else {
+              createCmd.append(tableName);
+              createCmd.append("(");
+              createCmd.append(dbName);
+              createCmd.append(")");
+            }
+            if (index.Where) {
+              createCmd.append(" WHERE ");
+              createCmd.append(index.Where);
+            }
+            if (index.Using) {
+              createCmd.append(" USING ");
+              createCmd.append(index.Using);
+            }
+            createCmd.append(";");
+            work.exec(createCmd);
+            work.commit();
+          }
+        }
+      }
     }
 
     /**
@@ -506,15 +589,17 @@ namespace fr::autocrud {
         n->idString()
       };
       template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
-        const auto [cppName, dbName, dbType, ptr] = this->column<i>();
+        const auto [cppName, dbName, dbType, indexes, ptr] = this->column<i>();
         // Skip ignore field
         if (!cppName || 0 == strlen(cppName)) {
           continue;
         }
         fields.append(std::format(",{}", dbName));
         values.append(std::format(",${}", i + 2)); // Because values should be at 2 when I is 0
+        // We'll need to look up our type to see if we need to format it specially
+        using FormatLookupType = std::decay_t<decltype((*n).*ptr)>;
         // Append the member to save to params
-        p.append((*n).*ptr);
+        p.append(DbFormatData<FormatLookupType>::format((*n).*ptr));
       }
       fields.append(")");
       values.append(");");
@@ -546,14 +631,18 @@ namespace fr::autocrud {
       // Retrieve the row record from res
       for (auto const &row : res) {
         template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
-          const auto [cppName, dbName, dbType, ptr] = this->column<i>();
+          const auto [cppName, dbName, dbType, indexes, ptr] = this->column<i>();
           if (!cppName || 0 == strlen(cppName)) {
             continue;
           }
           // Retrieve the type so we can set it wtih row[string].as<type>()
           using ColumnType = std::decay_t<decltype((*n).*ptr)>;
-          // Nothing up my sleeve
-          (*n).*ptr = row[std::string(dbName)].template as<ColumnType>();
+          // Retrieve the C++ read type from DbFormatData
+          using ReadType = DbFormatData<ColumnType>::ReadType;
+          // Call DbFormatData to set the value -- this lets me call methods for
+          // on the element if I need to (see the fr::autocrud::Vector specialization
+          // in CrudTypes.h)
+          DbFormatData<ColumnType>::set((*n).*ptr, row[std::string(dbName)].template as<ReadType>());
         }
       }
       return ret;
@@ -572,7 +661,7 @@ namespace fr::autocrud {
       };
       size_t skippedSome = 0;
       template for (constexpr size_t i : std::views::iota(0, columnsSize)) {
-        const auto [cppName, dbName, dbType, ptr] = this->column<i>();
+        const auto [cppName, dbName, dbType, indexes, ptr] = this->column<i>();
         if (!cppName || 0 == strlen(cppName)) {
           continue;
         }
@@ -580,7 +669,8 @@ namespace fr::autocrud {
           cmd.append(", ");
         }
         cmd.append(std::format("{} = ${}", dbName, startAt++));
-        p.append((*n).*ptr);
+        using FormatLookupType = std::decay_t<decltype((*n).*ptr)>;
+        p.append(DbFormatData<FormatLookupType>::format((*n).*ptr));
       }
       cmd.append(" WHERE ID = $1;");
       pqxx::work work(c);

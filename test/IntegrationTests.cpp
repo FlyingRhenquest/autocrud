@@ -31,6 +31,8 @@
 #include <fr/autocrud/Crud.h>
 #include <fr/autocrud/Graph.h>
 #include <fr/autocrud/Helpers.h>
+#include <fr/autocrud/Index.h>
+#include <fr/autocrud/VectorType.h>
 #include <memory>
 #include <pqxx/pqxx>
 
@@ -335,3 +337,69 @@ TEST(Integration, Relations) {
   saver.Delete(primary, c);
   saver.DropTables(c);
 }
+
+/**
+ * Make sure we can create a Vector table and index
+ */
+
+TEST(Integration, VectorTable) {
+  pqxx::connection c;
+  struct VectorTable : public fr::autocrud::Node {
+    [[= fr::autocrud::Index {
+          .Name = std::define_static_string("vector_table_embedding_index"),
+          .On = std::define_static_string("VectorTable"),
+          .Using = std::define_static_string("hnsw (embeddings vector_cosine_ops)")
+        }
+     ]]
+    fr::autocrud::Vector<768> embeddings;
+  };
+
+  fr::autocrud::Crud<VectorTable> crud;
+  crud.CreateTable(c);
+  crud.DropTable(c);
+}
+
+/**
+ * Make sure we can do a Vector round trip -- only enable if
+ * ENABLE_EMBEDDING_ENGINE_TESTS is enabled
+ */
+
+#ifdef ENABLE_EMBEDDING_ENGINE_TESTS
+
+TEST(Integration, VectorTableRoundTrip) {
+  pqxx::connection c;
+  // We're not actually creating an index on this table, we're just
+  // writing the vector to the table, reading it back and verifying
+  // that the values are the same.
+  struct VectorRoundTripTable : public fr::autocrud::Node {
+    // Text the vector is for
+    std::string text;
+    fr::autocrud::Vector<64> embeddings;
+  };
+
+  fr::autocrud::Crud<VectorRoundTripTable> crud;
+  crud.CreateTable(c);
+  auto row = std::make_shared<VectorRoundTripTable>();
+  std::string modelPath{MODEL_LOC}; // Passed in from CMake
+  auto engine = std::make_shared<fr::autocrud::EmbeddingEngine>(modelPath);
+  row->embeddings.setEngine(engine);
+  row->text = "The quick brown fox jumped over the lazy dong";
+  row->embeddings.setEmbeddings(row->text);
+  crud.Create(row, c);
+  ASSERT_TRUE(crud.Exists(row,c));
+
+  auto copy = std::make_shared<VectorRoundTripTable>();
+  copy->id = row->id;
+  // Just a plain ol' raw read retrieves the embeddings back
+  // into the copy. This isn't very useful for vector distance
+  // queries, but we'll do queries soon! (Plus the model
+  // I'm using for this test is completely random so we
+  // don't want to query or index it anyway.)
+  ASSERT_TRUE(crud.Read(copy, c));
+  ASSERT_EQ(row->text, copy->text);
+  ASSERT_EQ(row->embeddings.size(), copy->embeddings.size());
+  ASSERT_EQ(row->embeddings.toPgString(), copy->embeddings.toPgString());
+  crud.DropTable(c);
+}
+
+#endif

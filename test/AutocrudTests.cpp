@@ -16,7 +16,9 @@
 
 #include <gtest/gtest.h>
 #include <fr/autocrud/Crud.h>
+#include <fr/autocrud/Index.h>
 #include <fr/autocrud/Node.h>
+#include <fr/autocrud/VectorType.h>
 
 TEST(Autocrud, Basic) {
 
@@ -61,39 +63,55 @@ TEST(Autocrud, TableDefBasic) {
   
   // We'll do these in their own scope to keep variable names tidy
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<0>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<0>();
     ASSERT_EQ(cppName, std::string_view("foo"));
     ASSERT_EQ(dbName, std::string_view("foo"));
     ASSERT_EQ(dbType, std::string_view("BIGINT"));
     ASSERT_EQ((*child).*ptr, 42);
   }
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<1>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<1>();
     ASSERT_EQ(cppName, std::string_view("bar"));
     ASSERT_EQ(dbName, std::string_view("bar"));
     ASSERT_EQ(dbType, std::string_view("TEXT"));
     ASSERT_EQ((*child).*ptr, "PLEH!");
   }
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<2>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<2>();
     // Ignore field names will be nullptr
     ASSERT_EQ(cppName, nullptr);
   }
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<3>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<3>();
     ASSERT_EQ(cppName, std::string_view("baz"));
     ASSERT_EQ(dbName, std::string_view("baz"));
     ASSERT_EQ(dbType, std::string_view("VARCHAR(100)"));
     ASSERT_EQ((*child).*ptr, "BAZ!");
   }
   {
-    const auto [cppName, dbName, dbType, ptr] = crud.column<4>();
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<4>();
     ASSERT_EQ(cppName, std::string_view("definitelyNotSteve"));
     ASSERT_EQ(dbName, std::string_view("steve"));
     ASSERT_EQ(dbType, std::string_view("TEXT"));
     ASSERT_EQ((*child).*ptr, "No, it's Steve.");
   }
   // Yay! We can introspect our class as expected.
+}
+
+// Make sure VectorType maps correctly;
+TEST(Autocrud, VectorType) {
+  struct VectorTable : public fr::autocrud::Node {
+    fr::autocrud::Vector<1536> embedding;
+  };
+
+  fr::autocrud::Crud<VectorTable> crud;
+
+  {
+    const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<0>();
+    ASSERT_EQ(cppName, std::string_view("embedding"));
+    ASSERT_EQ(dbName, std::string_view("embedding"));
+    ASSERT_EQ(dbType, std::string_view("public.vector(1536)"));
+  }
 }
 
 TEST(Autocrud, RenameTable) {
@@ -105,5 +123,57 @@ TEST(Autocrud, RenameTable) {
 
   fr::autocrud::Crud<NotAGenericTable> crud;
   ASSERT_EQ(std::string(crud.tableName), "generic_table");
-  
 }
+
+TEST(Autocrud, IndexNoDefaults) {
+  struct IndexedTable : public fr::autocrud::Node {
+    // Index will apply to thing. You can apply multiple indexes to
+    // a single column.
+    [[= fr::autocrud::Index {
+          .Name = std::define_static_string("thing_index"),
+          .On = std::define_static_string("IndexedTable"),
+          .Using = std::define_static_string("GIN (thing)"),
+          .Where = std::define_static_string("thing = 'monkey'")}
+        ]]
+    [[= fr::autocrud::Index {
+          .Name = std::define_static_string("thing_index_2"),
+          .On = std::define_static_string("IndexedTable"),
+          .Using = std::define_static_string("GIN (thing)"),
+          .Where = std::define_static_string("thing = 'bagel'")}
+        ]]
+    std::string thing;
+  };
+
+  fr::autocrud::Crud<IndexedTable> crud;
+  const auto [cppName, dbName, dbType, indexes, ptr] = crud.column<0>();
+
+  ASSERT_EQ(indexes.index[0].Name, std::string_view("thing_index"));
+  ASSERT_EQ(indexes.index[0].On, std::string_view("IndexedTable"));
+  ASSERT_EQ(indexes.index[0].Using, std::string_view("GIN (thing)"));
+  ASSERT_EQ(indexes.index[0].Where, std::string_view("thing = 'monkey'"));
+  ASSERT_EQ(indexes.index[1].Name, std::string_view("thing_index_2"));
+  ASSERT_EQ(indexes.index[1].On, std::string_view("IndexedTable"));
+  ASSERT_EQ(indexes.index[1].Using, std::string_view("GIN (thing)"));
+  ASSERT_EQ(indexes.index[1].Where, std::string_view("thing = 'bagel'"));
+}
+
+/**
+ * Make sure a vector can query an embedding engine to get embeddings for
+ * a piece of text.
+ */
+
+#ifdef ENABLE_EMBEDDING_ENGINE_TESTS
+
+TEST(Autocrud, VectorEmbeddingEngine) {
+  std::string modelPath{MODEL_LOC}; // Passed in from CMake
+  fr::autocrud::Vector<64> embeddings;
+  auto engine = std::make_shared<fr::autocrud::EmbeddingEngine>(modelPath);
+  embeddings.setEngine(engine);
+  ASSERT_FALSE(embeddings.hasEmbeddings());
+  ASSERT_EQ(embeddings.size(), 0l);
+  embeddings.setEmbeddings("The quick brown fox something something danger zone");
+  ASSERT_TRUE(embeddings.hasEmbeddings());
+  std::cout << embeddings.toPgString() << std::endl;
+}
+
+#endif

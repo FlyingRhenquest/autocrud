@@ -6,6 +6,15 @@ work with a current gcc16. See my p2996_tests project for scripts and toolchain 
 build gcc16 and the clang Bloomberg fork in Linux if you need a compiler that supports
 reflection.
 
+## New
+
+ * pgvector support with a supplied embedding engine that uses llama.cpp
+ * Made Create/Read/Update use DbFormatData overrides for reading and setting
+   data. So if you have a complex data type you want to store as a column,
+   you can actually do that now.
+ * Removed the module stuff as I wasn't using it and it was making much more
+   work for me to support it.
+
 ## Limitations
 
 This is designed to use classes that derive from `fr::autocrud::Node`, which provides
@@ -55,6 +64,8 @@ You can use the following annotations on the fiels in your object to affect your
 1. `[[=DbFieldName{std::define_static_string("...")}]]` Rename the field in the database to `"..."`
 1. `[[=DbFieldType{std::define_static_string("...")}]]` Set the database field type
 1. `[[=DBTableName{std::define_static_string("...")}]]` Rename the table associated with the struct
+1. `[[=fr::autocrud::Index{...}]]` Create an Index. Index has several fields you can set to
+   control Index generation. You can set multiple indexes on a column.
  
 If you find these to be a bit long to type, you can include `<fr/autocrud/Helpers.h>` and use
 these instead:
@@ -82,6 +93,23 @@ added an annotation you can use to change this, too. By default, the
 table for "`struct Derived`" will be "`Derived`". Your table
 fieldnames will be the names of the elements in your structure, unless
 you rename them with `DbFieldName`.
+
+# Pgvector Support
+
+This library now supports pgvector via the fr::autocrud::Vector object in
+fr/autocrud/VectorType.h. The Vector object requires a size template parameter,
+which will be the size of the vector in the database. This will depend on the
+model you're using but since the Vector size is a template parameter, you do
+have to know the size of the vector you want to store when you compile the code.
+
+There's also am EmbeddingEngine in fr/autocrud/EmbeddingEngine.h that uses
+llama.cpp to create vector embeddings for text. When you create an instance
+of a Node object in C++, you can set your Vector's embedding engine with
+instance->embeddings.setEngine(). It takes a shared pointer to an embedding
+engine.
+
+There is NOT currently a way to query, well, anything, really, much less
+a vector query, from inside Crud. I'm planning to tackle that next.
 
 # Warnings/Other
 

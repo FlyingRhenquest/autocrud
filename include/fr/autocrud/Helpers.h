@@ -31,21 +31,6 @@ consteval auto Ignore() {
   return fr::autocrud::DbIgnore{};
 }
 
-// TODO: Replace with std::basic_fixed_string if P3094R0 ever
-// gets implemented
-
-namespace fr::autocrud {
-
-  template <std::size_t N>
-  struct FixedString {
-    char data[N];
-    constexpr FixedString(const char (&str)[N]) {
-      std::copy_n(str, N, data);
-    }
-  };
-  
-}
-
 /**
  * Map DbFieldType to _ColumnType maybe?
  */

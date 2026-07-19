@@ -35,7 +35,7 @@ namespace fr::autocrud {
 
   /**
    * A generic node type. This is basically the same one from
-   * my RequirementsManager project. All autocrud data
+   * my RequirementsManager project. All autocrud tables
    * should derive from this.
    */
   

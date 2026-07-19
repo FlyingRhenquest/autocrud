@@ -21,10 +21,21 @@ add_executable(test
   ${TEST_SRC}
 )
 
+if (AUTOCRUD_BUILD_VECTOR_EMBEDDING_TESTS)
+  set(RESOURCE_FILE "${PROJECT_SOURCE_DIR}/resources/tiny-random-qwen3-Q2_K.gguf")
+  if (EXISTS "${RESOURCE_FILE}")
+    target_compile_definitions(test PRIVATE ENABLE_EMBEDDING_ENGINE_TESTS MODEL_LOC=\"${RESOURCE_FILE}\")
+  else()
+    message(WARNING "AUTOCRUD_BUILD_VECTOR_EMBEDDING_TESTS is enabled but ${RESOURCE_FILE} was not found. Skipping vector embedding tests.")
+  endif()
+endif()
+
 target_link_libraries(test PUBLIC
   GTest::GTest
   GTest::Main
   FR::autocrud
+  llama
+  ggml
 )
 
 if (AUTOCRUD_BUILD_INTEGRATION_TESTS)
@@ -40,6 +51,21 @@ if (AUTOCRUD_BUILD_INTEGRATION_TESTS)
     GTest::GTest
     GTest::Main
     FR::autocrud
+    llama
+    ggml
   )
   
 endif()
+
+if (AUTOCRUD_BUILD_VECTOR_EMBEDDING_TESTS)
+  set(RESOURCE_FILE "${PROJECT_SOURCE_DIR}/resources/tiny-random-qwen3-Q2_K.gguf")
+  if (EXISTS "${RESOURCE_FILE}")    
+    target_compile_definitions(test PRIVATE ENABLE_EMBEDDING_ENGINE_TESTS MODEL_LOC=\"${RESOURCE_FILE}\")
+    if (AUTOCRUD_BUILD_INTEGRATION_TESTS)
+      target_compile_definitions(IntegrationTests PRIVATE ENABLE_EMBEDDING_ENGINE_TESTS MODEL_LOC=\"${RESOURCE_FILE}\")
+    endif()
+  else()
+    message(WARNING "AUTOCRUD_BUILD_VECTOR_EMBEDDING_TESTS is enabled but ${RESOURCE_FILE} was not found. Skipping vector embedding tests.")
+  endif()
+endif()
+
