@@ -18,6 +18,7 @@
 #include <fr/autocrud/Crud.h>
 #include <fr/autocrud/Index.h>
 #include <fr/autocrud/Node.h>
+#include <fr/autocrud/Query.h>
 #include <fr/autocrud/VectorType.h>
 
 TEST(Autocrud, Basic) {
@@ -155,6 +156,55 @@ TEST(Autocrud, IndexNoDefaults) {
   ASSERT_EQ(indexes.index[1].On, std::string_view("IndexedTable"));
   ASSERT_EQ(indexes.index[1].Using, std::string_view("GIN (thing)"));
   ASSERT_EQ(indexes.index[1].Where, std::string_view("thing = 'bagel'"));
+}
+
+/**
+ * Test to make sure the Query object data layout works
+ */
+TEST(Autocrud, QueryConstruction) {
+
+  /**
+   * A query doesn't need to map to a table. In fact, a query object doesn't inherit from
+   * Node at all. You just freehand a SQL query as an annotation and set up your
+   * structure to receive the data from the query. The column names in your query should
+   * match field name that is receiving that data in the structure.
+   */
+  
+  struct [[= fr::autocrud::QueryText {
+        .Text = std::define_static_string("SELECT id, title, content, embedding <=> $1 AS distance FROM theoretical_embedding_table order by embedding <=> $1 LIMIT 5;")
+      }]] EmbeddingData {
+    boost::uuids::uuid id;
+    std::string title;
+    std::string content;
+    double embedding;
+  };
+
+  // If we were to run this query, storage would be populated.
+  // We don't actually have a table to test it against at the moment,
+  // so we'll just examine the Query to make sure it was set up correctly.
+  std::vector<EmbeddingData> storage;
+    
+  fr::autocrud::Query<EmbeddingData> embeddingQuery(storage);
+
+  ASSERT_EQ(fr::autocrud::Query<EmbeddingData>::sql, std::string_view("SELECT id, title, content, embedding <=> $1 AS distance FROM theoretical_embedding_table order by embedding <=> $1 LIMIT 5;"));
+
+  // We'll check column names in their own scope to keep thigns tidy
+  {
+    const auto [fieldname, ptr] = embeddingQuery.column<0>();
+    ASSERT_EQ(fieldname, std::string_view("id"));
+  }
+  {
+    const auto [fieldname, ptr] = embeddingQuery.column<1>();
+    ASSERT_EQ(fieldname, std::string_view("title"));
+  }
+  {
+    const auto [fieldname, ptr] = embeddingQuery.column<2>();
+    ASSERT_EQ(fieldname, std::string_view("content"));
+  }
+  {
+    const auto [fieldname, ptr] = embeddingQuery.column<3>();
+    ASSERT_EQ(fieldname, std::string_view("embedding"));
+  }
 }
 
 /**

@@ -32,6 +32,7 @@
 #include <fr/autocrud/Graph.h>
 #include <fr/autocrud/Helpers.h>
 #include <fr/autocrud/Index.h>
+#include <fr/autocrud/Query.h>
 #include <fr/autocrud/VectorType.h>
 #include <memory>
 #include <pqxx/pqxx>
@@ -360,6 +361,67 @@ TEST(Integration, VectorTable) {
 }
 
 /**
+ * See if we can run a query
+ */
+TEST(Integration, Query) {
+  pqxx::connection c;
+  struct Employees : public fr::autocrud::Node {
+    Employees(const std::string n, const std::string t) : name(n), type(t) {}
+    std::string name;
+    std::string type; // Employee type
+  };
+  fr::autocrud::Crud<Employees> crud;
+  crud.CreateTable(c);
+  // Set up Employees stable
+  std::vector<std::shared_ptr<Employees>> employees;
+  employees.push_back(std::make_shared<Employees>("Steve", "Manager"));
+  employees.push_back(std::make_shared<Employees>("Gary", "Manager"));
+  employees.push_back(std::make_shared<Employees>("Mike", "Accountant"));
+  employees.push_back(std::make_shared<Employees>("Fred", "Lawyer"));
+  for(auto employee : employees) {
+    crud.Create(employee, c);
+  }
+
+  // Set up a query type
+  struct [[= fr::autocrud::QueryText {
+        .Text =
+        std::define_static_string("SELECT name, type FROM employees WHERE type = $1;")
+      }]]
+    EmployeeByType {
+    std::string name;
+    std::string type;
+  };
+  // Set up some storage for my query type
+  std::vector<EmployeeByType> storage;
+  // set up my query
+  fr::autocrud::Query<EmployeeByType> employeeByType(storage);
+  // Set params to find managers
+  pqxx::params p{
+    "Manager"
+  };
+  // Make sure we got some returns
+  ASSERT_TRUE(employeeByType.run(p, c));
+  // Make sure we found 2 managers
+  ASSERT_EQ(storage.size(), 2);
+  // Let's just... push this search around a little... so it doesn't suck...
+  auto nameFound = [&](const std::string& name) -> bool {
+    const auto loc = std::find_if(storage.begin(), storage.end(), [&](const EmployeeByType& value) { if (value.name == name) {
+          return true;
+        }
+        return false;
+    });
+    return loc != storage.end();
+  };
+  ASSERT_TRUE(nameFound("Steve"));
+  ASSERT_TRUE(nameFound("Gary"));
+  // Clean up
+  for (auto employee : employees) {
+    crud.Delete(employee, c);
+  }
+  crud.DropTable(c);
+}
+
+/**
  * Make sure we can do a Vector round trip -- only enable if
  * ENABLE_EMBEDDING_ENGINE_TESTS is enabled
  */
@@ -399,6 +461,7 @@ TEST(Integration, VectorTableRoundTrip) {
   ASSERT_EQ(row->text, copy->text);
   ASSERT_EQ(row->embeddings.size(), copy->embeddings.size());
   ASSERT_EQ(row->embeddings.toPgString(), copy->embeddings.toPgString());
+  crud.Delete(row, c);
   crud.DropTable(c);
 }
 

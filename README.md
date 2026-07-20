@@ -14,6 +14,9 @@ reflection.
    you can actually do that now.
  * Removed the module stuff as I wasn't using it and it was making much more
    work for me to support it.
+ * Added a Query type that allows you to annotate a structure that should be
+   populated by an arbitrary SQL query with the SQL text of the query, and
+   which populates a storage vector of that query type.
 
 ## Limitations
 
@@ -22,24 +25,9 @@ a unique ID for each record and associations between nodes. There is no inherent
 why your tables need to derive from anything, but I've found the node/node_associations
 stuff I provide from the object to be useful.
 
-At the moment, the ID from `Node` is the primary key and autonode doesn't have a way to
-set up other keys or relationships. I plan to add annotations to provide some extra
-control over the database soon.
-
-At the moment you can only store fairly basic types. You can store strings and things,
-but arrays of other objects hasn't been tested and probably won't work. I may or
-may not implement that at some point.
-
 You can not store an autocrud class in an autocrud data object right now. I mean, you
 can, but it won't work the way you want it to. I would like to detect them to establish
 relationships between tables, but that'll take some work.
-
-You can set node associations through the `Node` up/down lists and these do get recorded.
-I've also added a `Graph` object that can traverse a graph of `Nodes` to write the whole
-thing to a database and load a graph back from the database. `Graph` is also capable of
-creating tables for all the `Node` child types listed in an array of `std::meta::info`
-objects (Basically like a C++26 type list) and can also drop tables and delete entire
-graphs from the database. I use that for cleaning up after integration tests.
 
 ## Usage
 
@@ -51,6 +39,7 @@ tests are a good place to look for basic usage.
 The `Crud` object provides the following operations:
 
 1. `Crud::CreateTable` - Creates a table if it doesn't already exist. It's safe to call repeatedly.
+1. `Crud::CreateIndexes` - Creates indexes if they don't already exist. It's safe to call repetaedly.
 1. `Crud::DropTable` - Drops a table. You can't call it repeatedly (unless you call `CreateTable` repeatedly too)
 1. `Crud::Exists` - Takes a object with its ID set and returns true if that ID is found in the database.
 1. `Crud::Create` - Creates a record in the table created for your class.
@@ -66,6 +55,8 @@ You can use the following annotations on the fiels in your object to affect your
 1. `[[=DBTableName{std::define_static_string("...")}]]` Rename the table associated with the struct
 1. `[[=fr::autocrud::Index{...}]]` Create an Index. Index has several fields you can set to
    control Index generation. You can set multiple indexes on a column.
+1. `[[=fr::autocrud::QueryText{...}]]` Annotate a structure with a SQL query. See
+   `TEST(Integration, Query)` in IntegrationTests.cpp for usage.
  
 If you find these to be a bit long to type, you can include `<fr/autocrud/Helpers.h>` and use
 these instead:
@@ -94,7 +85,14 @@ table for "`struct Derived`" will be "`Derived`". Your table
 fieldnames will be the names of the elements in your structure, unless
 you rename them with `DbFieldName`.
 
-# Pgvector Support
+You can set node associations through the `Node` up/down lists and these do get recorded.
+I've also added a `Graph` object that can traverse a graph of `Nodes` to write the whole
+thing to a database and load a graph back from the database. `Graph` is also capable of
+creating tables for all the `Node` child types listed in an array of `std::meta::info`
+objects (Basically like a C++26 type list) and can also drop tables and delete entire
+graphs from the database. I use that for cleaning up after integration tests.
+
+## Pgvector Support
 
 This library now supports pgvector via the fr::autocrud::Vector object in
 fr/autocrud/VectorType.h. The Vector object requires a size template parameter,
@@ -111,7 +109,45 @@ engine.
 There is NOT currently a way to query, well, anything, really, much less
 a vector query, from inside Crud. I'm planning to tackle that next.
 
-# Warnings/Other
+## Query Support
+
+`fr::autocrud::Query` allows you to define a structure to retrieve data from
+an arbitrary database query. To do this, you annotate a struct with
+the text of your query. The fields in your struct must match the field names
+in your query:
+
+    struct [[= fr::autocrud::QueryText {
+               .Text =
+               std::define_static_string("SELECT foo FROM foobar WHERE bar = $1;")
+           }]] FooBarQuery {
+      std::string foo;
+    };
+
+You then need to set up some storage for it:
+
+    std::vector<FooBarQuery> storage;
+
+And declare a Query:
+
+    fr::autocrud::Query<FooBarQuery> query(storage);
+
+You'll need a pqxx::connection:
+
+    pqxx::connection c;
+
+Set up pqxx::params to match your SQL query:
+
+    pqxx::params p {
+       "foo"
+    };
+
+And run the query:
+
+    query.run(p, c);
+
+This will populate any results it finds into storage.
+
+## Warnings/Other
 
 Be careful about running the Integration tests. I'm planning to create
 and drop records and tables there pretty regularly, so you want to run
@@ -142,9 +178,5 @@ at the moment so it seemed like a good time to upload it to github.
 This is more-or-less a toy right now, but I expect it to be a lot more useful with
 not much more work.
 
-# TODOs
 
-I should probably put in some annotations to establish additional indexes/keys
-on a table for referential integrity and fast lookups of columns other than
-id. This is pretty good now as a proof of concept, though.
 

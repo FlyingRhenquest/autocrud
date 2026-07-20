@@ -15,6 +15,9 @@
  */
 
 #pragma once
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <chrono>
 #include <format>
 #include <time.h>
@@ -186,6 +189,29 @@ namespace fr::autocrud {
     
   };
 
+  /**
+   * Back and forth for boost::uuid
+   */
+
+  template <>
+  struct DbFormatData<boost::uuids::uuid> {
+    using ReadType = std::string;
+
+    inline static std::string format(const boost::uuids::uuid &id) {
+      std::string ret = boost::uuids::to_string(id);
+      return ret;
+    }
+
+    inline static void set(boost::uuids::uuid &element, const ReadType& value) {
+      boost::uuids::string_generator generator;
+      element = generator(value);
+    }
+  };
+
+  /**
+   * Back and forth for std::chrono
+   */
+  
   template <>
   struct DbFormatData<std::chrono::system_clock::time_point> {
 
