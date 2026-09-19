@@ -122,7 +122,7 @@ namespace fr::autocrud {
      * Creates a node with a specific boost::uuid. If you create
      * a node this way, changed will be set to false.
      */
-    Node(boost::uuid newId) : id{newId}, changed{false} {      
+    Node(boost::uuids::uuid newId) : id{newId}, changed{false} {      
     }
     
     // Note: Copying a node will copy its UUID, you may want to
@@ -262,7 +262,7 @@ namespace fr::autocrud {
 
     // Set UUID from boost::uuid
 
-    void setUuid(const boost::uuid& newId) {
+    void setUuid(const boost::uuids::uuid& newId) {
       id = newId;
       changed = true;
     }
