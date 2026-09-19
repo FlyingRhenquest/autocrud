@@ -117,6 +117,13 @@ namespace fr::autocrud {
       // be inittted at some point, so now seems good.
       init();
     }
+
+    /**
+     * Creates a node with a specific boost::uuid. If you create
+     * a node this way, changed will be set to false.
+     */
+    Node(boost::uuid newId) : id{newId}, changed{false} {      
+    }
     
     // Note: Copying a node will copy its UUID, you may want to
     // rerun init() on the copy if you want it to be a different
@@ -250,6 +257,13 @@ namespace fr::autocrud {
     void setUuid(const std::string &uuid) {
       boost::uuids::string_generator generator;
       id = generator(uuid);
+      changed = true;
+    }
+
+    // Set UUID from boost::uuid
+
+    void setUuid(const boost::uuid& newId) {
+      id = newId;
       changed = true;
     }
 
